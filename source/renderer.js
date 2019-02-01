@@ -6,34 +6,45 @@ const {ipcRenderer: ipc} = electron;
 
 ipc.callMain = (channel, data) => new Promise((resolve, reject) => {
 	const {sendChannel, dataChannel, errorChannel} = util.getResponseChannels(channel);
+	const id = `${Date.now()}-${Math.random()}`;
+	const uniqueDataChannel = `${dataChannel}-${id}`;
+	const uniqueErrorChannel = `${errorChannel}-${id}`;
 
 	const cleanup = () => {
-		ipc.removeAllListeners(dataChannel);
-		ipc.removeAllListeners(errorChannel);
+		ipc.removeAllListeners(uniqueDataChannel);
+		ipc.removeAllListeners(uniqueErrorChannel);
 	};
 
-	ipc.on(dataChannel, (event, result) => {
+	ipc.on(uniqueDataChannel, (event, result) => {
 		cleanup();
 		resolve(result);
 	});
 
-	ipc.on(errorChannel, (event, error) => {
+	ipc.on(uniqueErrorChannel, (event, error) => {
 		cleanup();
 		reject(error);
 	});
 
-	ipc.send(sendChannel, data);
+	const completeData = {
+		uniqueDataChannel,
+		uniqueErrorChannel,
+		userData: data
+	};
+
+	ipc.send(sendChannel, completeData);
 });
 
 ipc.answerMain = (channel, callback) => {
 	const window = electron.remote.getCurrentWindow();
-	const {sendChannel, dataChannel, errorChannel} = util.getRendererResponseChannels(window.id, channel);
+	const {sendChannel} = util.getRendererResponseChannels(window.id, channel);
 
 	const listener = async (event, data) => {
+		const {uniqueDataChannel, uniqueErrorChannel, userData} = data;
+
 		try {
-			ipc.send(dataChannel, await callback(data));
+			ipc.send(uniqueDataChannel, await callback(userData));
 		} catch (error) {
-			ipc.send(errorChannel, error);
+			ipc.send(uniqueErrorChannel, error);
 		}
 	};
 

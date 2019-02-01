@@ -6,29 +6,38 @@ const {ipcMain: ipc, BrowserWindow} = electron;
 
 ipc.callRenderer = (window, channel, data) => new Promise((resolve, reject) => {
 	const {sendChannel, dataChannel, errorChannel} = util.getRendererResponseChannels(window.id, channel);
+	const id = `${Date.now()}-${Math.random()}`;
+	const uniqueDataChannel = `${dataChannel}-${id}`;
+	const uniqueErrorChannel = `${errorChannel}-${id}`;
 
 	const cleanup = () => {
-		ipc.removeAllListeners(dataChannel);
-		ipc.removeAllListeners(errorChannel);
+		ipc.removeAllListeners(uniqueDataChannel);
+		ipc.removeAllListeners(uniqueErrorChannel);
 	};
 
-	ipc.on(dataChannel, (event, result) => {
+	ipc.on(uniqueDataChannel, (event, result) => {
 		cleanup();
 		resolve(result);
 	});
 
-	ipc.on(errorChannel, (event, error) => {
+	ipc.on(uniqueErrorChannel, (event, error) => {
 		cleanup();
 		reject(error);
 	});
 
+	const completeData = {
+		uniqueDataChannel,
+		uniqueErrorChannel,
+		userData: data
+	};
+
 	if (window.webContents) {
-		window.webContents.send(sendChannel, data);
+		window.webContents.send(sendChannel, completeData);
 	}
 });
 
 ipc.answerRenderer = (channel, callback) => {
-	const {sendChannel, dataChannel, errorChannel} = util.getResponseChannels(channel);
+	const {sendChannel} = util.getResponseChannels(channel);
 
 	const listener = async (event, data) => {
 		const window = BrowserWindow.fromWebContents(event.sender);
@@ -39,10 +48,12 @@ ipc.answerRenderer = (channel, callback) => {
 			}
 		};
 
+		const {uniqueDataChannel, uniqueErrorChannel, userData} = data;
+
 		try {
-			send(dataChannel, await callback(data, window));
+			send(uniqueDataChannel, await callback(userData, window));
 		} catch (error) {
-			send(errorChannel, error);
+			send(uniqueErrorChannel, error);
 		}
 	};
 
